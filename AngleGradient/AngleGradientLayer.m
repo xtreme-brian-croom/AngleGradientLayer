@@ -50,7 +50,7 @@
 @end
 
 
-static void angleGradient(byte* data, int w, int h, int* colors, int colorCount, float* locations, int locationCount);
+static void angleGradient(byte* data, int w, int h, int* colors, int colorCount, float* locations, int locationCount, CGPathRef clipPath, BOOL eoFill);
 
 
 @implementation AngleGradientLayer
@@ -60,38 +60,37 @@ static void angleGradient(byte* data, int w, int h, int* colors, int colorCount,
 	if (!(self = [super init]))
 		return nil;
 	
+    self.clipFillRule = kCAFillRuleNonZero;
 	self.needsDisplayOnBoundsChange = YES;
 	
 	return self;
 }
 
-#if !__has_feature(objc_arc)
 - (void)dealloc
 {
+    CGPathRelease(_clipPath);
+#if !__has_feature(objc_arc)
 	[_colors release];
 	[_locations release];
+    [_clipFillRule release];
 	[super dealloc];
-}
 #endif
+}
 
-- (void)drawInContext:(CGContextRef)ctx
+- (void)display
 {
-	CGContextSetFillColorWithColor(ctx, self.backgroundColor);
-	CGRect rect = CGContextGetClipBoundingBox(ctx);
-	CGContextFillRect(ctx, rect);
-
-	CGImageRef img = [self newImageGradientInRect:rect];
-	CGContextDrawImage(ctx, rect, img);
+    CGImageRef img = [self newImageGradientInRect:self.bounds];
+    self.contents = (__bridge id)img;
 	CGImageRelease(img);
 }
 
 - (CGImageRef)newImageGradientInRect:(CGRect)rect
 {
-	int w = CGRectGetWidth(rect);
-	int h = CGRectGetHeight(rect);
+    CGFloat scale = self.contentsScale;
+	int w = (int)(CGRectGetWidth(rect)*scale);
+	int h = (int)(CGRectGetHeight(rect)*scale);
 	int bitsPerComponent = 8;
 	int bpp = 4 * bitsPerComponent / 8;
-	int byteCount = w * h * bpp;
 	
 	int colorCount = self.colors.count;
 	int locationCount = 0;
@@ -132,21 +131,76 @@ static void angleGradient(byte* data, int w, int h, int* colors, int colorCount,
 			*p++ = [n floatValue];
 		}
 	}
+    
+    CGPathRef transformedClipPath = NULL;
+    if (self.clipPath) {
+        CGAffineTransform scaleTransform = CGAffineTransformMakeScale(scale, scale);
+        transformedClipPath = CGPathCreateCopyByTransformingPath(self.clipPath, &scaleTransform);
+    }
 	
-	byte* data = malloc(byteCount);
-	angleGradient(data, w, h, colors, colorCount, locations, locationCount);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+	CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Little;
+	CGContextRef ctx = CGBitmapContextCreate(NULL, w, h, bitsPerComponent, w * bpp, colorSpace, bitmapInfo);
+	CGColorSpaceRelease(colorSpace);
+    
+    byte* data = CGBitmapContextGetData(ctx);
+    BOOL eoFill = [self.clipFillRule isEqualToString:kCAFillRuleEvenOdd];
+	angleGradient(data, w, h, colors, colorCount, locations, locationCount, transformedClipPath, eoFill);
 	
 	if (colors) free(colors);
 	if (locations) free(locations);
+    CGPathRelease(transformedClipPath);
 	
-	CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-	CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Little;
-	CGContextRef ctx = CGBitmapContextCreate(data, w, h, bitsPerComponent, w * bpp, colorSpace, bitmapInfo);
-	CGColorSpaceRelease(colorSpace);
 	CGImageRef img = CGBitmapContextCreateImage(ctx);
 	CGContextRelease(ctx);
-	free(data);
+    
 	return img;
+}
+
+#pragma mark - Property Overrides
+
+- (void)setColors:(NSArray *)colors
+{
+#if !__has_feature(objc_arc)
+    colors = [colors copy];
+    [_colors release];
+    _colors = colors;
+#else
+    _colors = [colors copy];
+#endif
+    [self setNeedsDisplay];
+}
+
+- (void)setLocations:(NSArray *)locations
+{
+#if !__has_feature(objc_arc)
+    locations = [locations copy];
+    [_locations release];
+    _locations = locations;
+#else
+    _locations = [locations copy];
+#endif
+    [self setNeedsDisplay];
+}
+
+- (void)setClipPath:(CGPathRef)clipPath
+{
+    CGPathRetain(clipPath);
+    CGPathRelease(_clipPath);
+    _clipPath = clipPath;
+    [self setNeedsDisplay];
+}
+
+- (void)setClipFillRule:(NSString *)clipFillRule
+{
+#if !__has_feature(objc_arc)
+    clipFillRule = [clipFillRule copy];
+    [_clipFillRule release];
+    _clipFillRule = clipFillRule;
+#else
+    _clipFillRule = [clipFillRule copy];
+#endif
+    [self setNeedsDisplay];
 }
 
 @end
@@ -163,7 +217,7 @@ static inline int lerp(int a, int b, float w)
 				blerp(RGBA_A(a), RGBA_A(b), w));
 }
 
-void angleGradient(byte* data, int w, int h, int* colors, int colorCount, float* locations, int locationCount)
+void angleGradient(byte* data, int w, int h, int* colors, int colorCount, float* locations, int locationCount, CGPathRef clipPath, BOOL eoFill)
 {
 	if (colorCount < 1) return;
 	if (locationCount > 0 && locationCount != colorCount) return;
@@ -174,6 +228,11 @@ void angleGradient(byte* data, int w, int h, int* colors, int colorCount, float*
 	
 	for (int y = 0; y < h; y++)
 	for (int x = 0; x < w; x++) {
+        if (clipPath && !CGPathContainsPoint(clipPath, NULL, (CGPoint){x+0.5f, y+0.5f}, eoFill)) {
+            p++;
+            continue;
+        }
+        
 		float dirX = x - centerX;
 		float dirY = y - centerY;
 		float angle = atan2f(dirY, dirX);

@@ -16,6 +16,12 @@
 	return [AngleGradientLayer class];
 }
 
+- (void)didMoveToWindow {
+    if (self.window) {
+        self.layer.contentsScale = self.window.screen.scale;
+    }
+}
+
 - (id)initWithFrame:(CGRect)frame
 {
 	if (!(self = [super initWithFrame:frame]))

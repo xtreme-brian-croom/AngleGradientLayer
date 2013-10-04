@@ -16,12 +16,16 @@
 	return [AngleGradientLayer class];
 }
 
+- (void)didMoveToWindow {
+    if (self.window) {
+        self.layer.contentsScale = self.window.screen.scale;
+    }
+}
+
 - (id)initWithFrame:(CGRect)frame
 {
 	if (!(self = [super initWithFrame:frame]))
 		return nil;
-	
-	self.backgroundColor = [UIColor whiteColor];
 	
 	NSMutableArray *colors = [[NSMutableArray alloc] initWithCapacity:4];
 	
@@ -35,9 +39,12 @@
 	
 	AngleGradientLayer *l = (AngleGradientLayer *)self.layer;
 	l.colors = colors;
-	
-	l.cornerRadius = CGRectGetWidth(self.bounds) / 2;
-	self.clipsToBounds = YES;
+    
+    UIBezierPath *ringPath = [UIBezierPath bezierPathWithOvalInRect:self.bounds];
+    [ringPath appendPath:[UIBezierPath bezierPathWithOvalInRect:CGRectInset(self.bounds, 5, 5)]];
+	l.clipPath = ringPath.CGPath;
+    l.clipFillRule = kCAFillRuleEvenOdd;
+    
 	self.transform = CGAffineTransformMakeRotation(-M_PI_2);
 	
 	return self;

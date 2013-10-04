@@ -34,7 +34,7 @@
 /* The array of CGColorRef objects defining the color of each gradient
  * stop. Defaults to nil. */
 
-@property(copy) NSArray *colors;
+@property(nonatomic, copy) NSArray *colors;
 
 /* An optional array of NSNumber objects defining the location of each
  * gradient stop as a value in the range [0,1]. The values must be
@@ -43,6 +43,16 @@
  * the colors are mapped to the output colorspace before being
  * interpolated. Defaults to nil. */
 
-@property(copy) NSArray *locations;
+@property(nonatomic, copy) NSArray *locations;
+
+/* An optional path object which will be used to clip the gradient
+ * as it is drawn. Defaults to nil. */
+
+@property (nonatomic, nonatomic) CGPathRef clipPath;
+
+/* The fill rule used when clipping the gradient. Options are `non-zero' and
+ * `even-odd'. Defaults to `non-zero'. */
+
+@property(nonatomic, copy) NSString *clipFillRule;
 
 @end
